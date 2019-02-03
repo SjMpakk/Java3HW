@@ -5,6 +5,8 @@ import javafx.scene.control.Alert;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ClientHandler {
     private Server server;
@@ -12,6 +14,7 @@ public class ClientHandler {
     private DataInputStream in;
     private DataOutputStream out;
     private String nick;
+    private static ExecutorService executorService = Executors.newCachedThreadPool();
 
     public String getNick() {
         return nick;
@@ -23,7 +26,12 @@ public class ClientHandler {
             this.socket = socket;
             this.in = new DataInputStream(socket.getInputStream());
             this.out = new DataOutputStream(socket.getOutputStream());
-            new Thread(() -> {
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
                 try {
                     while (true) {
                         String msg = in.readUTF();
@@ -35,7 +43,7 @@ public class ClientHandler {
                                     if (!server.isNickBusy(newNick)) {
                                         nick = newNick;
                                         sendMsg("/authok " + newNick);
-                                        server.subscribe(this);
+                                        server.subscribe(ClientHandler.this);
                                         break;
                                     } else {
                                         sendMsg("Учетная запись уже занята");
@@ -53,7 +61,7 @@ public class ClientHandler {
                             if (msg.equals("/end")) break;
                             if (msg.startsWith("/w ")) { // /w nick1 hello java
                                 String[] data = msg.split("\\s", 3);
-                                server.sendPrivateMsg(this, data[1], data[2]);
+                                server.sendPrivateMsg(ClientHandler.this, data[1], data[2]);
                             }
                         } else {
                             server.broadcastMsg(nick + ": " + msg);
@@ -63,19 +71,15 @@ public class ClientHandler {
                     e.printStackTrace();
                 } finally {
                     nick = null;
-                    server.unsubscribe(this);
+                    server.unsubscribe(ClientHandler.this);
                     try {
                         socket.close();
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
                 }
-
-            }).start();
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+            }
+        });
     }
 
     public void sendMsg(String msg) {
